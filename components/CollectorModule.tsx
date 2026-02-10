@@ -11,11 +11,12 @@ interface CollectorModuleProps {
   setPayments: React.Dispatch<React.SetStateAction<Payment[]>>;
   setInstallments: React.Dispatch<React.SetStateAction<Installment[]>>;
   onAddUser: (u: User) => void;
+  onDeleteUser: (userId: string) => void;
   onAddLoan: (l: Loan, i: Installment[]) => void;
 }
 
 const CollectorModule: React.FC<CollectorModuleProps> = ({ 
-  user, users, loans, installments, setPayments, setInstallments, onAddUser, onAddLoan 
+  user, users, loans, installments, setPayments, setInstallments, onAddUser, onDeleteUser, onAddLoan 
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'route' | 'clients' | 'new_loan'>('route');
   const [showPaymentModal, setShowPaymentModal] = useState<Installment | null>(null);
@@ -205,18 +206,28 @@ const CollectorModule: React.FC<CollectorModuleProps> = ({
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {clients.map(c => (
-              <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-100 flex items-center gap-4 hover:shadow-md transition">
+              <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-100 flex items-center gap-4 hover:shadow-md transition group">
                 <img src={c.avatar} className="w-12 h-12 rounded-full border-2 border-slate-50" />
                 <div className="flex-1 min-w-0">
                   <h4 className="font-bold text-slate-800 text-sm truncate">{c.name}</h4>
                   <p className="text-[10px] text-slate-400 font-medium truncate">{c.email}</p>
                 </div>
-                <button 
-                  onClick={() => {setLoanForm({...loanForm, clientId: c.id}); setActiveSubTab('new_loan');}} 
-                  className="bg-blue-50 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-600 hover:text-white transition"
-                >
-                  <i className="fas fa-plus"></i>
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => onDeleteUser(c.id)}
+                    className="bg-red-50 text-red-500 w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition opacity-0 group-hover:opacity-100"
+                    title="Eliminar Cliente"
+                  >
+                    <i className="fas fa-trash-alt text-xs"></i>
+                  </button>
+                  <button 
+                    onClick={() => {setLoanForm({...loanForm, clientId: c.id}); setActiveSubTab('new_loan');}} 
+                    className="bg-blue-50 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-600 hover:text-white transition"
+                    title="Nuevo Préstamo"
+                  >
+                    <i className="fas fa-plus"></i>
+                  </button>
+                </div>
               </div>
             ))}
           </div>

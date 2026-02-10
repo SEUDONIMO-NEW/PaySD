@@ -1,5 +1,6 @@
 
 export enum Role {
+  CEO = 'CEO',
   DUEÑO = 'DUEÑO',
   SUPERVISOR = 'SUPERVISOR',
   RECAUDADOR = 'RECAUDADOR',
@@ -25,12 +26,21 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  password?: string; // Añadido para autenticación
+  password?: string;
   role: Role;
   avatar?: string;
-  parentId?: string; // ID del usuario que lo creó (Dueño -> Supervisor -> Recaudador)
-  assignedCapital?: number; // Para Recaudadores
-  profitMargin?: number; // % de ganancia para el recaudador
+  parentId?: string;
+  assignedCapital?: number;
+  profitMargin?: number;
+  routeId?: string; // Vínculo opcional con una ruta
+}
+
+export interface Route {
+  id: string;
+  name: string;
+  ownerId: string;
+  supervisorId?: string;
+  description?: string;
 }
 
 export interface Loan {

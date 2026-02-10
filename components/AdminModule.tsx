@@ -1,260 +1,316 @@
 
 import React, { useState } from 'react';
-import { User, Role, Loan, Installment } from '../types';
+import { User, Role, Loan, Installment, Route } from '../types';
 import { formatCurrency } from '../utils/finance';
 
 interface AdminModuleProps {
   user: User;
   users: User[];
+  routes: Route[];
   loans: Loan[];
   installments: Installment[];
   onAddUser: (u: User) => void;
+  onDeleteUser: (userId: string) => void;
   onUpdateUser: (u: User) => void;
+  onAddRoute: (r: Route) => void;
+  onDeleteRoute: (routeId: string) => void;
+  onUpdateRoute: (r: Route) => void;
 }
 
-const AdminModule: React.FC<AdminModuleProps> = ({ user, users, loans, installments, onAddUser, onUpdateUser }) => {
-  const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({ name: '', email: '', capital: '1000000', margin: '10', password: '' });
+const AdminModule: React.FC<AdminModuleProps> = ({ 
+  user, users, routes, loans, installments, 
+  onAddUser, onDeleteUser, onUpdateUser, 
+  onAddRoute, onDeleteRoute, onUpdateRoute 
+}) => {
+  const [activeAdminTab, setActiveAdminTab] = useState<'users' | 'routes'>('users');
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [showRouteModal, setShowRouteModal] = useState(false);
+  
+  const [userFormData, setUserFormData] = useState({ name: '', email: '', capital: '1000000', margin: '10', password: '' });
+  const [routeFormData, setRouteFormData] = useState({ name: '', supervisorId: '', description: '' });
 
-  const targetRole = user.role === Role.DUEÑO ? Role.SUPERVISOR : Role.RECAUDADOR;
+  const targetRole = user.role === Role.CEO ? Role.DUEÑO 
+                    : user.role === Role.DUEÑO ? Role.SUPERVISOR 
+                    : Role.RECAUDADOR;
+
   const managedUsers = users.filter(u => u.role === targetRole && u.parentId === user.id);
+  const myRoutes = routes.filter(r => r.ownerId === user.id);
 
-  const getCollectorStats = (collectorId: string) => {
-    const collectorLoans = loans.filter(l => l.collectorId === collectorId);
-    const collectorInstallments = installments.filter(i => collectorLoans.some(l => l.id === i.loanId));
+  const getCollectorStats = (userId: string) => {
+    const relevantLoans = loans.filter(l => l.collectorId === userId || l.routeId === userId);
+    const relevantInstallments = installments.filter(i => relevantLoans.some(l => l.id === i.loanId));
     
-    const totalToCollect = collectorInstallments.reduce((acc, curr) => acc + curr.amount, 0);
-    const collected = collectorInstallments.filter(i => i.status === 'PAGADO').reduce((acc, curr) => acc + curr.amount, 0);
-    const overdue = collectorInstallments.filter(i => {
+    const totalToCollect = relevantInstallments.reduce((acc, curr) => acc + curr.amount, 0);
+    const collected = relevantInstallments.filter(i => i.status === 'PAGADO').reduce((acc, curr) => acc + curr.amount, 0);
+    const overdue = relevantInstallments.filter(i => {
       return i.status === 'PENDIENTE' && new Date(i.dueDate) < new Date();
     }).reduce((acc, curr) => acc + curr.amount, 0);
 
-    const efficiency = totalToCollect > 0 ? (collected / totalToCollect) * 100 : 0;
-
-    return { totalToCollect, collected, overdue, efficiency };
+    return { totalToCollect, collected, overdue };
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     const newUser: User = {
       id: `u-${Date.now()}`,
-      name: formData.name,
-      email: formData.email,
-      password: formData.password || '123456',
+      name: userFormData.name,
+      email: userFormData.email,
+      password: userFormData.password || '123456',
       role: targetRole,
       parentId: user.id,
-      assignedCapital: parseInt(formData.capital),
-      profitMargin: parseInt(formData.margin),
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.name}`
+      assignedCapital: parseInt(userFormData.capital),
+      profitMargin: parseInt(userFormData.margin),
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userFormData.name}`
     };
     onAddUser(newUser);
-    setShowModal(false);
-    setFormData({ name: '', email: '', capital: '1000000', margin: '10', password: '' });
+    setShowUserModal(false);
+    setUserFormData({ name: '', email: '', capital: '1000000', margin: '10', password: '' });
+  };
+
+  const handleCreateRoute = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newRoute: Route = {
+      id: `r-${Date.now()}`,
+      name: routeFormData.name,
+      ownerId: user.id,
+      supervisorId: routeFormData.supervisorId || undefined,
+      description: routeFormData.description
+    };
+    onAddRoute(newRoute);
+    setShowRouteModal(false);
+    setRouteFormData({ name: '', supervisorId: '', description: '' });
+  };
+
+  const handleAssignSupervisor = (routeId: string, supId: string) => {
+    const route = routes.find(r => r.id === routeId);
+    if (route) {
+      onUpdateRoute({ ...route, supervisorId: supId });
+    }
   };
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl border border-slate-100 shadow-sm gap-4">
+      {/* Header Admin */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h2 className="text-xl font-bold text-slate-800">
-            {user.role === Role.DUEÑO ? 'Control de Supervisores' : 'Balance de Estadísticas por Recaudador'}
+            {user.role === Role.CEO ? 'Control Maestro' : user.role === Role.DUEÑO ? 'Gestión de Empresa' : 'Control de Equipo'}
           </h2>
-          <p className="text-sm text-slate-500">
-            {user.role === Role.DUEÑO 
-              ? 'Crea y supervisa a los encargados de zona.' 
-              : 'Monitorea el desempeño financiero y el cumplimiento de metas de tu equipo.'}
-          </p>
+          <p className="text-sm text-slate-500">Administra recursos, personal y rutas operativas.</p>
         </div>
+        
+        {user.role === Role.DUEÑO && (
+          <div className="flex bg-slate-50 p-1 rounded-xl w-full md:w-auto">
+            <button 
+              onClick={() => setActiveAdminTab('users')}
+              className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${activeAdminTab === 'users' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}
+            >
+              SUPERVISORES
+            </button>
+            <button 
+              onClick={() => setActiveAdminTab('routes')}
+              className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${activeAdminTab === 'routes' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}`}
+            >
+              RUTAS
+            </button>
+          </div>
+        )}
+
         <button 
-          onClick={() => setShowModal(true)}
-          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-lg shadow-blue-600/20"
+          onClick={() => activeAdminTab === 'users' ? setShowUserModal(true) : setShowRouteModal(true)}
+          className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition shadow-lg shadow-blue-600/20 active:scale-95"
         >
-          <i className="fas fa-user-plus"></i>
-          Crear {targetRole}
+          <i className="fas fa-plus"></i>
+          Registrar {activeAdminTab === 'users' ? targetRole : 'Ruta'}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {managedUsers.length > 0 ? managedUsers.map(u => {
-          const stats = getCollectorStats(u.id);
-          return (
-            <div key={u.id} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col sm:flex-row">
-              {/* Profile Section */}
-              <div className="p-6 bg-slate-50 sm:w-48 flex flex-col items-center justify-center border-b sm:border-b-0 sm:border-r border-slate-100">
-                <div className="relative mb-4">
-                  <img src={u.avatar} className="w-20 h-20 rounded-full border-4 border-white shadow-sm" />
-                  <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white ${stats.efficiency > 80 ? 'bg-emerald-500' : stats.efficiency > 50 ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+      {activeAdminTab === 'users' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {managedUsers.length > 0 ? managedUsers.map(u => {
+            const stats = getCollectorStats(u.id);
+            const assignedRoute = routes.find(r => r.supervisorId === u.id);
+
+            return (
+              <div key={u.id} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col sm:flex-row relative group">
+                <button 
+                  onClick={() => onDeleteUser(u.id)}
+                  className="absolute top-4 right-4 w-8 h-8 bg-red-50 text-red-500 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 hover:text-white"
+                >
+                  <i className="fas fa-trash-alt text-xs"></i>
+                </button>
+
+                <div className="p-6 bg-slate-50 sm:w-48 flex flex-col items-center justify-center border-b sm:border-b-0 sm:border-r border-slate-100">
+                  <img src={u.avatar} className="w-16 h-16 rounded-full border-4 border-white shadow-sm mb-3" />
+                  <h3 className="font-bold text-slate-800 text-center text-sm">{u.name}</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center">{u.role}</p>
+                  
+                  {user.role === Role.DUEÑO && (
+                    <div className="mt-4 w-full">
+                       <span className={`block text-center text-[9px] font-black py-1 px-2 rounded-full border ${assignedRoute ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                         {assignedRoute ? assignedRoute.name : 'SIN RUTA'}
+                       </span>
+                    </div>
+                  )}
                 </div>
-                <h3 className="font-bold text-slate-800 text-center text-sm">{u.name}</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center mt-1">Recaudador</p>
-                
-                <div className="mt-6 w-full space-y-2">
-                   <button className="w-full py-2 bg-white text-blue-600 text-[10px] font-bold uppercase rounded-lg border border-blue-100 hover:bg-blue-50 transition">
-                     Ver Detalle
-                   </button>
-                   <button className="w-full py-2 bg-white text-slate-500 text-[10px] font-bold uppercase rounded-lg border border-slate-100 hover:bg-slate-50 transition">
-                     Editar Perfil
-                   </button>
+
+                <div className="flex-1 p-6">
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="bg-blue-50/50 p-3 rounded-xl">
+                      <p className="text-[10px] font-bold text-blue-500 uppercase">Capital</p>
+                      <p className="text-xs font-black text-blue-700">{formatCurrency(u.assignedCapital || 0)}</p>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-xl">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase">Margen</p>
+                      <p className="text-xs font-black text-slate-700">{u.profitMargin}%</p>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Recaudo Total</p>
+                    <p className="text-sm font-bold text-slate-800">{formatCurrency(stats.collected)}</p>
+                  </div>
                 </div>
               </div>
-
-              {/* Stats Section */}
-              <div className="flex-1 p-6">
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div className="bg-emerald-50 p-4 rounded-2xl">
-                    <p className="text-[10px] font-bold text-emerald-600 uppercase mb-1">Total Recaudado</p>
-                    <p className="text-lg font-black text-emerald-700">{formatCurrency(stats.collected)}</p>
+            );
+          }) : (
+            <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100 text-slate-400">
+              No hay {targetRole.toLowerCase()}s registrados.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {myRoutes.length > 0 ? myRoutes.map(r => {
+            const supervisor = users.find(u => u.id === r.supervisorId);
+            return (
+              <div key={r.id} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative group">
+                <button 
+                  onClick={() => onDeleteRoute(r.id)}
+                  className="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition opacity-0 group-hover:opacity-100"
+                >
+                  <i className="fas fa-times-circle"></i>
+                </button>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl">
+                    <i className="fas fa-map-marked-alt"></i>
                   </div>
-                  <div className="bg-red-50 p-4 rounded-2xl">
-                    <p className="text-[10px] font-bold text-red-600 uppercase mb-1">Mora / Vencido</p>
-                    <p className="text-lg font-black text-red-700">{formatCurrency(stats.overdue)}</p>
+                  <div>
+                    <h4 className="font-bold text-slate-800">{r.name}</h4>
+                    <p className="text-xs text-slate-400 truncate max-w-[150px]">{r.description || 'Sin descripción'}</p>
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <div>
-                    <div className="flex justify-between items-end mb-2">
-                      <span className="text-xs font-bold text-slate-500 uppercase">Eficiencia de Cobro</span>
-                      <span className={`text-sm font-black ${stats.efficiency > 80 ? 'text-emerald-600' : stats.efficiency > 50 ? 'text-amber-600' : 'text-red-600'}`}>
-                        {stats.efficiency.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-1000 ${stats.efficiency > 80 ? 'bg-emerald-500' : stats.efficiency > 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-                        style={{ width: `${stats.efficiency}%` }}
-                      ></div>
-                    </div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Supervisor Asignado</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:border-blue-500"
+                      value={r.supervisorId || ''}
+                      onChange={(e) => handleAssignSupervisor(r.id, e.target.value)}
+                    >
+                      <option value="">No asignado</option>
+                      {managedUsers.map(u => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </select>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
-                    <div>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Capital Asignado</p>
-                      <p className="text-sm font-bold text-slate-700">{formatCurrency(u.assignedCapital || 0)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase">Comisión Pactada</p>
-                      <p className="text-sm font-bold text-blue-600">{u.profitMargin}%</p>
-                    </div>
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 border-t border-slate-50 pt-4 uppercase">
+                    <span>Estado:</span>
+                    <span className={r.supervisorId ? 'text-emerald-500' : 'text-amber-500'}>
+                      {r.supervisorId ? 'Activa' : 'Pendiente Asignación'}
+                    </span>
                   </div>
                 </div>
               </div>
+            );
+          }) : (
+            <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-100 text-slate-400">
+              No has creado rutas operativas todavía.
             </div>
-          );
-        }) : (
-          <div className="col-span-full py-20 bg-white rounded-2xl border-2 border-dashed border-slate-100 flex flex-col items-center justify-center text-slate-400">
-            <i className="fas fa-users text-4xl mb-4 opacity-20"></i>
-            <p className="font-medium">No hay personal a cargo bajo tu supervisión.</p>
-            <button onClick={() => setShowModal(true)} className="mt-4 text-blue-600 font-bold text-sm hover:underline">
-              Dar de alta nuevo recaudador
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {showModal && (
+      {/* Modal Usuario */}
+      {showUserModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <form onSubmit={handleCreate} className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-scaleUp border border-slate-100">
-            <div className="flex justify-between items-center mb-8">
-              <div>
-                <h3 className="text-2xl font-bold text-slate-800">Nuevo {targetRole}</h3>
-                <p className="text-sm text-slate-500">Completa los datos del perfil y credenciales.</p>
-              </div>
-              <button type="button" onClick={() => setShowModal(false)} className="w-10 h-10 rounded-full bg-slate-50 text-slate-400 hover:bg-slate-100 transition flex items-center justify-center">
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-
+          <form onSubmit={handleCreateUser} className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-scaleUp">
+            <h3 className="text-2xl font-bold text-slate-800 mb-6">Nuevo {targetRole}</h3>
             <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Nombre Completo</label>
-                <div className="relative">
-                  <i className="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
-                  <input 
-                    placeholder="Ej. Carlos Mendez" 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition text-sm font-medium"
-                    value={formData.name}
-                    onChange={e => setFormData({...formData, name: e.target.value})}
-                    required
-                  />
-                </div>
+              <input 
+                placeholder="Nombre completo" required
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500"
+                value={userFormData.name}
+                onChange={e => setUserFormData({...userFormData, name: e.target.value})}
+              />
+              <input 
+                placeholder="Email / Usuario" required
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500"
+                value={userFormData.email}
+                onChange={e => setUserFormData({...userFormData, email: e.target.value})}
+              />
+              <input 
+                type="password" placeholder="Contraseña segura" required
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500"
+                value={userFormData.password}
+                onChange={e => setUserFormData({...userFormData, password: e.target.value})}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <input 
+                  type="number" placeholder="Capital Asignado" required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  value={userFormData.capital}
+                  onChange={e => setUserFormData({...userFormData, capital: e.target.value})}
+                />
+                <input 
+                  type="number" placeholder="Margen %" required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500"
+                  value={userFormData.margin}
+                  onChange={e => setUserFormData({...userFormData, margin: e.target.value})}
+                />
               </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Correo Electrónico</label>
-                <div className="relative">
-                  <i className="fas fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
-                  <input 
-                    type="email" 
-                    placeholder="recaudador@paysd.com" 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition text-sm font-medium"
-                    value={formData.email}
-                    onChange={e => setFormData({...formData, email: e.target.value})}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Contraseña de Acceso</label>
-                <div className="relative">
-                  <i className="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
-                  <input 
-                    type="password" 
-                    placeholder="Min. 6 caracteres" 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition text-sm font-medium"
-                    value={formData.password}
-                    onChange={e => setFormData({...formData, password: e.target.value})}
-                    required
-                  />
-                </div>
-              </div>
-
-              {targetRole === Role.RECAUDADOR && (
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block">Capital Diario ($)</label>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
-                      <input 
-                        type="number" 
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-4 py-3.5 outline-none focus:border-blue-500 transition text-sm font-bold text-slate-700"
-                        value={formData.capital}
-                        onChange={e => setFormData({...formData, capital: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 block">% Comisión</label>
-                    <div className="relative">
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-sm">%</span>
-                      <input 
-                        type="number" 
-                        max="100"
-                        className="w-full bg-emerald-50/50 border border-emerald-100 rounded-xl px-4 py-3.5 outline-none focus:border-emerald-500 transition text-sm font-bold text-emerald-700"
-                        value={formData.margin}
-                        onChange={e => setFormData({...formData, margin: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-            
-            <div className="flex gap-4 mt-10">
-              <button 
-                type="button" 
-                onClick={() => setShowModal(false)} 
-                className="flex-1 py-4 font-bold text-slate-400 hover:bg-slate-50 rounded-2xl transition"
+            <div className="flex gap-4 mt-8">
+              <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 py-4 font-bold text-slate-400 hover:bg-slate-50 rounded-2xl transition">Cerrar</button>
+              <button type="submit" className="flex-1 bg-blue-600 text-white py-4 font-bold rounded-2xl shadow-lg">Registrar</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Ruta */}
+      {showRouteModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <form onSubmit={handleCreateRoute} className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-scaleUp">
+            <h3 className="text-2xl font-bold text-slate-800 mb-6">Nueva Ruta de Cobro</h3>
+            <div className="space-y-4">
+              <input 
+                placeholder="Nombre de la Ruta (Ej: Centro-Norte)" required
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500"
+                value={routeFormData.name}
+                onChange={e => setRouteFormData({...routeFormData, name: e.target.value})}
+              />
+              <textarea 
+                placeholder="Descripción o límites de la ruta..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500 h-24 resize-none"
+                value={routeFormData.description}
+                onChange={e => setRouteFormData({...routeFormData, description: e.target.value})}
+              />
+              <select 
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500"
+                value={routeFormData.supervisorId}
+                onChange={e => setRouteFormData({...routeFormData, supervisorId: e.target.value})}
               >
-                Cancelar
-              </button>
-              <button 
-                type="submit" 
-                className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-xl shadow-blue-600/30 hover:bg-blue-700 active:scale-[0.98] transition"
-              >
-                Crear Perfil
-              </button>
+                <option value="">Asignar supervisor (Opcional)</option>
+                {managedUsers.map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-4 mt-8">
+              <button type="button" onClick={() => setShowRouteModal(false)} className="flex-1 py-4 font-bold text-slate-400 hover:bg-slate-50 rounded-2xl transition">Cerrar</button>
+              <button type="submit" className="flex-1 bg-blue-600 text-white py-4 font-bold rounded-2xl shadow-lg">Crear Ruta</button>
             </div>
           </form>
         </div>

@@ -11,11 +11,11 @@ interface NavigationProps {
 
 const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab, role, onLogout }) => {
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: 'fa-chart-pie', roles: [Role.DUEÑO, Role.SUPERVISOR] },
-    { id: 'collector', label: 'Operación', icon: 'fa-route', roles: [Role.RECAUDADOR, Role.SUPERVISOR, Role.DUEÑO] },
-    { id: 'admin', label: role === Role.DUEÑO ? 'Admin' : 'Mi Equipo', icon: role === Role.DUEÑO ? 'fa-cog' : 'fa-users-cog', roles: [Role.DUEÑO, Role.SUPERVISOR] },
+    { id: 'dashboard', label: 'Dashboard', icon: 'fa-chart-pie', roles: [Role.CEO, Role.DUEÑO, Role.SUPERVISOR] },
+    { id: 'collector', label: 'Operación', icon: 'fa-route', roles: [Role.RECAUDADOR, Role.SUPERVISOR, Role.DUEÑO, Role.CEO] },
+    { id: 'admin', label: role === Role.CEO ? 'Empresas' : role === Role.DUEÑO ? 'Sucursales' : 'Mi Equipo', icon: 'fa-users-cog', roles: [Role.CEO, Role.DUEÑO, Role.SUPERVISOR] },
     { id: 'client', label: 'Mi Cartera', icon: 'fa-wallet', roles: [Role.CLIENTE] },
-    { id: 'support', label: 'Soporte', icon: 'fa-headset', roles: [Role.SOPORTE, Role.DUEÑO, Role.CLIENTE, Role.RECAUDADOR] },
+    { id: 'support', label: 'Soporte', icon: 'fa-headset', roles: [Role.SOPORTE, Role.DUEÑO, Role.CLIENTE, Role.RECAUDADOR, Role.CEO] },
   ];
 
   const filteredItems = menuItems.filter(item => item.roles.includes(role));
