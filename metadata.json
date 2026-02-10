@@ -1,0 +1,8 @@
+{
+  "name": "PaySD GOcash MVP",
+  "description": "A comprehensive fintech portfolio collection platform for loan management, real-time tracking, and automated installment generation.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
