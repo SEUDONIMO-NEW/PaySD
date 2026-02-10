@@ -23,46 +23,42 @@ const INITIAL_ROUTES: Route[] = [
 ];
 
 const App: React.FC = () => {
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [routes, setRoutes] = useState<Route[]>(INITIAL_ROUTES);
+  // Persistence Loading
+  const [users, setUsers] = useState<User[]>(() => {
+    const saved = localStorage.getItem('paysd_users');
+    return saved ? JSON.parse(saved) : INITIAL_USERS;
+  });
+  const [routes, setRoutes] = useState<Route[]>(() => {
+    const saved = localStorage.getItem('paysd_routes');
+    return saved ? JSON.parse(saved) : INITIAL_ROUTES;
+  });
+  const [loans, setLoans] = useState<Loan[]>(() => {
+    const saved = localStorage.getItem('paysd_loans');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [installments, setInstallments] = useState<Installment[]>(() => {
+    const saved = localStorage.getItem('paysd_installments');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [payments, setPayments] = useState<Payment[]>(() => {
+    const saved = localStorage.getItem('paysd_payments');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  
-  const [loans, setLoans] = useState<Loan[]>([]);
-  const [installments, setInstallments] = useState<Installment[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
 
+  // Persistence Saving
   useEffect(() => {
-    const mockLoan: Loan = {
-      id: 'l-init',
-      clientId: 'cli-1',
-      collectorId: 'rec-1',
-      routeId: 'r-1',
-      principal: 500000,
-      totalInterest: 0.20,
-      totalAmount: 600000,
-      periodicity: Periodicity.DIARIO,
-      installmentsCount: 24,
-      startDate: new Date().toISOString(),
-      status: LoanStatus.ACTIVO
-    };
-    
-    const mockInstallments = generateInstallments(
-      mockLoan.id, 
-      mockLoan.principal, 
-      mockLoan.totalInterest, 
-      mockLoan.periodicity, 
-      mockLoan.installmentsCount, 
-      mockLoan.startDate
-    );
-
-    setLoans([mockLoan]);
-    setInstallments(mockInstallments);
-  }, []);
+    localStorage.setItem('paysd_users', JSON.stringify(users));
+    localStorage.setItem('paysd_routes', JSON.stringify(routes));
+    localStorage.setItem('paysd_loans', JSON.stringify(loans));
+    localStorage.setItem('paysd_installments', JSON.stringify(installments));
+    localStorage.setItem('paysd_payments', JSON.stringify(payments));
+  }, [users, routes, loans, installments, payments]);
 
   const handleLogin = (email: string, password: string, role: Role): boolean => {
-    // Normalización de entradas para evitar errores comunes de usuario
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
 
@@ -96,6 +92,7 @@ const App: React.FC = () => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.')) {
       setUsers(prev => prev.filter(u => u.id !== userId));
       setRoutes(prev => prev.map(r => r.supervisorId === userId ? { ...r, supervisorId: undefined } : r));
+      // Also cleanup loans related if needed
     }
   };
 
@@ -108,7 +105,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRoute = (routeId: string) => {
-    if (window.confirm('¿Deseas eliminar esta ruta? Se perderá la vinculación con el supervisor.')) {
+    if (window.confirm('¿Deseas eliminar esta ruta?')) {
       setRoutes(prev => prev.filter(r => r.id !== routeId));
     }
   };
@@ -118,8 +115,16 @@ const App: React.FC = () => {
   };
 
   const handleAddLoan = (newLoan: Loan, newInstallments: Installment[]) => {
-    setLoans([...loans, newLoan]);
-    setInstallments([...installments, ...newInstallments]);
+    setLoans(prev => [...prev, newLoan]);
+    setInstallments(prev => [...prev, ...newInstallments]);
+  };
+
+  const handleUpdateInstallments = (updated: Installment[]) => {
+    setInstallments(prev => {
+      const map = new Map(prev.map(i => [i.id, i]));
+      updated.forEach(u => map.set(u.id, u));
+      return Array.from(map.values());
+    });
   };
 
   if (!isAuthenticated || !currentUser) {
@@ -129,7 +134,7 @@ const App: React.FC = () => {
   const renderModule = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard user={currentUser} loans={loans} installments={installments} />;
+        return <Dashboard user={currentUser} loans={loans} installments={installments} payments={payments} />;
       case 'collector':
         return <CollectorModule 
           user={currentUser} 
@@ -161,7 +166,7 @@ const App: React.FC = () => {
       case 'support':
         return <SupportModule user={currentUser} />;
       default:
-        return <Dashboard user={currentUser} loans={loans} installments={installments} />;
+        return <Dashboard user={currentUser} loans={loans} installments={installments} payments={payments} />;
     }
   };
 
@@ -176,16 +181,24 @@ const App: React.FC = () => {
       
       <main className="flex-1 p-4 md:p-8 overflow-y-auto pb-24 md:pb-8">
         <header className="mb-8 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">PaySD <span className="text-blue-600">GOcash</span></h1>
-            <p className="text-slate-500 text-sm">Sesión: <span className="font-bold text-slate-700">{currentUser.role}</span></p>
+          <div className="animate-slideDown">
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">PaySD <span className="text-blue-600">GOcash</span></h1>
+            <p className="text-slate-500 text-xs font-medium uppercase tracking-widest mt-1 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Sesión {currentUser.role}
+            </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 animate-fadeIn">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold">{currentUser.name}</p>
-              <p className="text-xs text-slate-400">{currentUser.email}</p>
+              <p className="text-sm font-bold text-slate-800 leading-tight">{currentUser.name}</p>
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter">ID: {currentUser.id.split('-')[0]}</p>
             </div>
-            <img src={currentUser.avatar} alt="Profile" className="w-10 h-10 rounded-full border-2 border-white shadow-sm" />
+            <div className="relative group">
+              <img src={currentUser.avatar} alt="Profile" className="w-10 h-10 rounded-xl border-2 border-white shadow-md cursor-pointer group-hover:scale-105 transition" />
+              <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-slate-100 p-2 hidden group-hover:block z-50 min-w-[120px]">
+                <button onClick={handleLogout} className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded transition">Cerrar Sesión</button>
+              </div>
+            </div>
           </div>
         </header>
 
