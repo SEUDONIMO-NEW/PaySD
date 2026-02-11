@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Role, User, Loan, Installment, Payment, Periodicity, LoanStatus, Route } from './types';
 import Navigation from './components/Navigation';
 import Dashboard from './components/Dashboard';
@@ -23,33 +23,28 @@ const INITIAL_ROUTES: Route[] = [
 ];
 
 const App: React.FC = () => {
-  // Persistence Loading
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('paysd_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
-  });
-  const [routes, setRoutes] = useState<Route[]>(() => {
-    const saved = localStorage.getItem('paysd_routes');
-    return saved ? JSON.parse(saved) : INITIAL_ROUTES;
-  });
-  const [loans, setLoans] = useState<Loan[]>(() => {
-    const saved = localStorage.getItem('paysd_loans');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [installments, setInstallments] = useState<Installment[]>(() => {
-    const saved = localStorage.getItem('paysd_installments');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [payments, setPayments] = useState<Payment[]>(() => {
-    const saved = localStorage.getItem('paysd_payments');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Persistence Helper
+  const getSavedData = <T,>(key: string, initial: T): T => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : initial;
+    } catch (e) {
+      console.error(`Error loading ${key} from storage`, e);
+      return initial;
+    }
+  };
+
+  const [users, setUsers] = useState<User[]>(() => getSavedData('paysd_users', INITIAL_USERS));
+  const [routes, setRoutes] = useState<Route[]>(() => getSavedData('paysd_routes', INITIAL_ROUTES));
+  const [loans, setLoans] = useState<Loan[]>(() => getSavedData('paysd_loans', []));
+  const [installments, setInstallments] = useState<Installment[]>(() => getSavedData('paysd_installments', []));
+  const [payments, setPayments] = useState<Payment[]>(() => getSavedData('paysd_payments', []));
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Persistence Saving
+  // Persistence Sync
   useEffect(() => {
     localStorage.setItem('paysd_users', JSON.stringify(users));
     localStorage.setItem('paysd_routes', JSON.stringify(routes));
@@ -58,7 +53,7 @@ const App: React.FC = () => {
     localStorage.setItem('paysd_payments', JSON.stringify(payments));
   }, [users, routes, loans, installments, payments]);
 
-  const handleLogin = (email: string, password: string, role: Role): boolean => {
+  const handleLogin = useCallback((email: string, password: string, role: Role): boolean => {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPassword = password.trim();
 
@@ -71,96 +66,95 @@ const App: React.FC = () => {
     if (user) {
       setCurrentUser(user);
       setIsAuthenticated(true);
+      // Auto-navigation based on role
       if (role === Role.RECAUDADOR) setActiveTab('collector');
       else if (role === Role.CLIENTE) setActiveTab('client');
       else setActiveTab('dashboard');
       return true;
     }
     return false;
-  };
+  }, [users]);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     setIsAuthenticated(false);
     setCurrentUser(null);
-  };
+    setActiveTab('dashboard');
+  }, []);
 
-  const handleAddUser = (newUser: User) => {
+  const handleAddUser = useCallback((newUser: User) => {
     setUsers(prev => [...prev, newUser]);
-  };
+  }, []);
 
-  const handleDeleteUser = (userId: string) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.')) {
+  const handleDeleteUser = useCallback((userId: string) => {
+    if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       setUsers(prev => prev.filter(u => u.id !== userId));
       setRoutes(prev => prev.map(r => r.supervisorId === userId ? { ...r, supervisorId: undefined } : r));
-      // Also cleanup loans related if needed
     }
-  };
+  }, []);
 
-  const handleUpdateUser = (updated: User) => {
+  const handleUpdateUser = useCallback((updated: User) => {
     setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
-  };
+  }, []);
 
-  const handleAddRoute = (newRoute: Route) => {
+  const handleAddRoute = useCallback((newRoute: Route) => {
     setRoutes(prev => [...prev, newRoute]);
-  };
+  }, []);
 
-  const handleDeleteRoute = (routeId: string) => {
+  const handleDeleteRoute = useCallback((routeId: string) => {
     if (window.confirm('¿Deseas eliminar esta ruta?')) {
       setRoutes(prev => prev.filter(r => r.id !== routeId));
     }
-  };
+  }, []);
 
-  const handleUpdateRoute = (updatedRoute: Route) => {
+  const handleUpdateRoute = useCallback((updatedRoute: Route) => {
     setRoutes(prev => prev.map(r => r.id === updatedRoute.id ? updatedRoute : r));
-  };
+  }, []);
 
-  const handleAddLoan = (newLoan: Loan, newInstallments: Installment[]) => {
+  const handleAddLoan = useCallback((newLoan: Loan, newInstallments: Installment[]) => {
     setLoans(prev => [...prev, newLoan]);
     setInstallments(prev => [...prev, ...newInstallments]);
-  };
+  }, []);
 
-  const handleUpdateInstallments = (updated: Installment[]) => {
-    setInstallments(prev => {
-      const map = new Map(prev.map(i => [i.id, i]));
-      updated.forEach(u => map.set(u.id, u));
-      return Array.from(map.values());
-    });
-  };
+  const handleProcessPayment = useCallback((payment: Payment, updatedInstallment: Installment) => {
+    setPayments(prev => [...prev, payment]);
+    setInstallments(prev => prev.map(i => i.id === updatedInstallment.id ? updatedInstallment : i));
+  }, []);
 
-  if (!isAuthenticated || !currentUser) {
-    return <LoginView onLogin={handleLogin} />;
-  }
+  const currentModule = useMemo(() => {
+    if (!currentUser) return null;
 
-  const renderModule = () => {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard user={currentUser} loans={loans} installments={installments} payments={payments} />;
       case 'collector':
-        return <CollectorModule 
-          user={currentUser} 
-          users={users}
-          loans={loans} 
-          installments={installments} 
-          setPayments={setPayments} 
-          setInstallments={setInstallments}
-          onAddUser={handleAddUser}
-          onDeleteUser={handleDeleteUser}
-          onAddLoan={handleAddLoan}
-        />;
+        return (
+          <CollectorModule 
+            user={currentUser} 
+            users={users}
+            loans={loans} 
+            installments={installments} 
+            onAddUser={handleAddUser}
+            onDeleteUser={handleDeleteUser}
+            onAddLoan={handleAddLoan}
+            onProcessPayment={handleProcessPayment}
+          />
+        );
       case 'admin':
-        return <AdminModule 
-          user={currentUser} 
-          users={users} 
-          routes={routes}
-          loans={loans}
-          installments={installments}
-          onAddUser={handleAddUser}
-          onDeleteUser={handleDeleteUser}
-          onUpdateUser={handleUpdateUser}
-          onAddRoute={handleAddRoute}
-          onDeleteRoute={handleDeleteRoute}
-          onUpdateRoute={handleUpdateRoute}
-        />;
+        return (
+          <AdminModule 
+            user={currentUser} 
+            users={users} 
+            routes={routes}
+            loans={loans}
+            installments={installments}
+            onAddUser={handleAddUser}
+            onDeleteUser={handleDeleteUser}
+            onUpdateUser={handleUpdateUser}
+            onAddRoute={handleAddRoute}
+            onDeleteRoute={handleDeleteRoute}
+            onUpdateRoute={handleUpdateRoute}
+          />
+        );
       case 'client':
         return <ClientWallet user={currentUser} loans={loans} installments={installments} />;
       case 'support':
@@ -168,10 +162,14 @@ const App: React.FC = () => {
       default:
         return <Dashboard user={currentUser} loans={loans} installments={installments} payments={payments} />;
     }
-  };
+  }, [activeTab, currentUser, users, loans, installments, payments, handleAddUser, handleDeleteUser, handleAddLoan, handleProcessPayment, handleUpdateUser, handleAddRoute, handleDeleteRoute, handleUpdateRoute]);
+
+  if (!isAuthenticated || !currentUser) {
+    return <LoginView onLogin={handleLogin} />;
+  }
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 text-slate-900 overflow-x-hidden">
       <Navigation 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
@@ -179,30 +177,48 @@ const App: React.FC = () => {
         onLogout={handleLogout}
       />
       
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto pb-24 md:pb-8">
-        <header className="mb-8 flex justify-between items-center">
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto pb-24 md:pb-8 max-w-full">
+        <header className="mb-8 flex justify-between items-center bg-white/50 backdrop-blur-md p-4 rounded-3xl border border-white/50 shadow-sm sticky top-0 z-30 sm:static sm:bg-transparent sm:border-none sm:shadow-none sm:p-0">
           <div className="animate-slideDown">
-            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">PaySD <span className="text-blue-600">GOcash</span></h1>
-            <p className="text-slate-500 text-xs font-medium uppercase tracking-widest mt-1 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Sesión {currentUser.role}
-            </p>
+            <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-none">
+              PaySD <span className="text-blue-600">GOcash</span>
+            </h1>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">{currentUser.role} ACTIVO</p>
+            </div>
           </div>
-          <div className="flex items-center gap-4 animate-fadeIn">
+          
+          <div className="flex items-center gap-3 animate-fadeIn">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-bold text-slate-800 leading-tight">{currentUser.name}</p>
-              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter">ID: {currentUser.id.split('-')[0]}</p>
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter">Terminal: {currentUser.id.split('-')[1] || '001'}</p>
             </div>
             <div className="relative group">
-              <img src={currentUser.avatar} alt="Profile" className="w-10 h-10 rounded-xl border-2 border-white shadow-md cursor-pointer group-hover:scale-105 transition" />
-              <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-slate-100 p-2 hidden group-hover:block z-50 min-w-[120px]">
-                <button onClick={handleLogout} className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded transition">Cerrar Sesión</button>
+              <img 
+                src={currentUser.avatar} 
+                alt="Profile" 
+                className="w-10 h-10 rounded-2xl border-2 border-white shadow-md cursor-pointer group-hover:scale-105 transition-transform duration-300" 
+              />
+              <div className="absolute top-full right-0 mt-3 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 hidden group-hover:block z-50 min-w-[160px] animate-fadeIn">
+                <div className="p-3 border-b border-slate-50 mb-1 sm:hidden">
+                  <p className="text-xs font-bold text-slate-800">{currentUser.name}</p>
+                </div>
+                <button 
+                  onClick={handleLogout} 
+                  className="w-full text-left px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors flex items-center gap-2"
+                >
+                  <i className="fas fa-sign-out-alt"></i>
+                  Cerrar Sesión
+                </button>
               </div>
             </div>
           </div>
         </header>
 
-        {renderModule()}
+        <section className="animate-fadeIn">
+          {currentModule}
+        </section>
       </main>
     </div>
   );
